@@ -1,9 +1,9 @@
 name: Ingest reel
 
 # Started by the iPhone shortcut (repository_dispatch) or by hand from the Actions tab.
-# The reel's caption, transcript and frames are stored as a temporary artifact, never
-# committed, so nothing about a reel stays in the repo. Claude deletes the artifact once it
-# has summarized the reel; anything left unreviewed expires on its own after 90 days.
+# The reel's caption, transcript and frames go on a separate `inbox` branch, never on main.
+# Once Claude has summarized a reel it rebuilds `inbox` without it (a fresh single commit,
+# force-pushed), so the reel's content is gone from the branch and its history.
 on:
   repository_dispatch:
     types: [reel]
@@ -13,8 +13,13 @@ on:
         description: Instagram reel link
         required: true
 
+# One reel at a time so pushes to the inbox branch never collide.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   ingest:
@@ -58,10 +63,19 @@ jobs:
         id: process
         run: python scripts/process_reel.py "$REEL_URL"
 
-      - name: Store as a temporary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: reel-${{ steps.process.outputs.folder }}
-          path: out/${{ steps.process.outputs.folder }}
-          retention-days: 90
-          if-no-files-found: error
+      - name: Add the reel to the inbox branch
+        env:
+          FOLDER: ${{ steps.process.outputs.folder }}
+        run: |
+          git config user.name "reels-inbox"
+          git config user.email "reels-inbox@users.noreply.github.com"
+          if git fetch origin +refs/heads/inbox:refs/remotes/origin/inbox 2>/dev/null; then
+            git checkout -B inbox origin/inbox
+          else
+            git checkout --orphan inbox
+            git rm -rfq . && git clean -fdq -e out
+          fi
+          mkdir -p reels && rm -rf "reels/$FOLDER" && mv "out/$FOLDER" reels/
+          git add reels
+          git commit -m "Add reel: $FOLDER"
+          git push origin inbox

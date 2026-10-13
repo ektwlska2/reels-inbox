@@ -2,8 +2,8 @@
 
 Share a reel from Instagram, and a free GitHub job downloads it, transcribes the speech with
 Whisper, and grabs the caption and a frame every 2 seconds (for on-screen text). The result is
-kept only as a temporary file on GitHub (an "artifact"), never saved in the repo. Claude reads
-it, summarizes the reel, then deletes it. Anything not reviewed disappears after 90 days.
+parked on a separate `inbox` branch, never on the main code. Claude reads it, summarizes the
+reel, then wipes it from the branch and its history.
 
 Everything is free: GitHub Actions gives private repos 2,000 minutes a month, and one reel
 takes about 2 to 3 minutes. Nothing runs on your own computer.
