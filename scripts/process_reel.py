@@ -79,17 +79,19 @@ def extract_frames(video: Path, out_dir: Path, duration: float) -> list[tuple[fl
 
 def transcribe(video: Path, workdir: Path) -> tuple[list[dict], str]:
     """Whisper on the runner's CPU. Returns (segments, detected language)."""
-    audio = workdir / "audio.wav"
+    # Decode with ffmpeg ourselves: faster-whisper's own decoder breaks on newer PyAV releases.
     proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", str(audio)],
-        capture_output=True, text=True,
+        ["ffmpeg", "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+        capture_output=True,
     )
-    if proc.returncode != 0 or not audio.exists():
+    if proc.returncode != 0 or not proc.stdout:
         return [], "no audio"
+    import numpy as np
     from faster_whisper import WhisperModel
 
+    audio = np.frombuffer(proc.stdout, dtype=np.float32)
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(str(audio), vad_filter=True)
+    segments, info = model.transcribe(audio, vad_filter=True)
     out = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments if s.text.strip()]
     return out, info.language
 
