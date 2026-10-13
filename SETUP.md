@@ -1,8 +1,9 @@
 # Reels inbox: setup
 
 Share a reel from Instagram, and a free GitHub job downloads it, transcribes the speech with
-Whisper, grabs the caption and 10 frames (for on-screen text), and saves them in this repo.
-Claude then reads `reels/INDEX.md` and the folders it links to.
+Whisper, and grabs the caption and a frame every 2 seconds (for on-screen text). The result is
+kept only as a temporary file on GitHub (an "artifact"), never saved in the repo. Claude reads
+it, summarizes the reel, then deletes it. Anything not reviewed disappears after 90 days.
 
 Everything is free: GitHub Actions gives private repos 2,000 minutes a month, and one reel
 takes about 2 to 3 minutes. Nothing runs on your own computer.
@@ -46,7 +47,7 @@ In the **Shortcuts** app, tap **+** and build this:
 ## 4. Use it
 
 In Instagram: **Share** on a reel > **Send to Claude**. The first time, scroll the share row,
-tap **More**, and pin it. A couple of minutes later the reel is in `reels/`.
+tap **More**, and pin it. A couple of minutes later the reel is ready for Claude.
 
 To check a run: the repo's **Actions** tab shows each reel. GitHub emails you if one fails.
 
@@ -65,4 +66,5 @@ or "rate limit":
 ## Settings you can change
 
 In `.github/workflows/ingest.yml` you can set `WHISPER_MODEL` (`base` is faster, `medium` is
-more accurate, `small` is the default) and `MAX_FRAMES`.
+more accurate, `small` is the default), `FRAME_EVERY` (seconds between frames, default 2) and
+`MAX_FRAMES` (default 45).

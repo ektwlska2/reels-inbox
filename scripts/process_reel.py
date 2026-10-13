@@ -4,8 +4,9 @@ Usage:
     python scripts/process_reel.py <reel-url>
     python scripts/process_reel.py --video local.mp4 [--url <original-url>]   # skip download
 
-Output goes to reels/<date>-<id>/ (reel.md + frame JPEGs) and a line is added to
-reels/INDEX.md. The video itself is never kept.
+Output goes to $OUT_DIR/<date>-<id>/ (reel.md + frame JPEGs). The workflow uploads that
+folder as a temporary GitHub Actions artifact instead of committing it, so nothing about the
+reel stays in the repo; Claude deletes the artifact after summarizing. The video is never kept.
 """
 import argparse
 import datetime as dt
@@ -19,12 +20,12 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-REELS_DIR = ROOT / "reels"
-INDEX = REELS_DIR / "INDEX.md"
+REELS_DIR = Path(os.getenv("OUT_DIR", str(ROOT / "out")))
 
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
-MAX_FRAMES = int(os.getenv("MAX_FRAMES", "10"))
-FRAME_WIDTH = 480
+FRAME_EVERY = float(os.getenv("FRAME_EVERY", "2"))  # seconds between frames
+MAX_FRAMES = int(os.getenv("MAX_FRAMES", "45"))
+FRAME_WIDTH = 540
 
 
 def download(url: str, workdir: Path) -> tuple[Path, dict]:
@@ -60,9 +61,9 @@ def duration_of(video: Path) -> float:
 
 
 def extract_frames(video: Path, out_dir: Path, duration: float) -> list[tuple[float, str]]:
-    """Evenly spaced frames; enough to read on-screen text and follow the visuals."""
+    """One frame every FRAME_EVERY seconds (spread out evenly past MAX_FRAMES) so on-screen text isn't missed."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    n = max(1, min(MAX_FRAMES, int(duration // 3) + 1)) if duration else 1
+    n = max(1, min(MAX_FRAMES, round(duration / FRAME_EVERY))) if duration else 1
     frames = []
     for i in range(n):
         t = round(duration * (i + 0.5) / n, 1) if duration else 0.0
@@ -129,7 +130,7 @@ def write_reel(url: str, info: dict, duration: float, segments, language, frames
         lines.append("_(no speech detected)_")
     lines += ["", "## Frames", ""]
     lines += [f"![frame at {t:g}s]({name}) at {t:g}s" for t, name in frames]
-    lines += ["", "## Claude's notes", "", "_(not reviewed yet)_", ""]
+    lines.append("")
     (out_dir / "reel.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -161,15 +162,11 @@ def main() -> int:
         segments, language = transcribe(video, workdir)
         write_reel(url or str(video), info, duration, segments, language, frames, out_dir, shared_at)
 
-        INDEX.parent.mkdir(parents=True, exist_ok=True)
-        if not INDEX.exists():
-            INDEX.write_text("# Reels inbox\n\nNewest at the bottom. Each folder has reel.md plus frames.\n\n")
-        uploader = info.get("uploader") or info.get("uploader_id") or "unknown"
-        first_line = (info.get("description") or "").strip().splitlines()[:1]
-        teaser = first_line[0][:80] if first_line else ""
-        with INDEX.open("a", encoding="utf-8") as f:
-            f.write(f"- [ ] {shared_at:%Y-%m-%d %H:%M} [{uploader}]({out_dir.name}/reel.md) {teaser}\n")
-        print(f"saved {out_dir.relative_to(ROOT)} ({len(segments)} transcript lines, {len(frames)} frames)")
+        github_output = os.getenv("GITHUB_OUTPUT")
+        if github_output:
+            with open(github_output, "a") as f:
+                f.write(f"folder={out_dir.name}\n")
+        print(f"saved {out_dir.name} ({len(segments)} transcript lines, {len(frames)} frames)")
         return 0
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

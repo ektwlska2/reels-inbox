@@ -1,6 +1,9 @@
 name: Ingest reel
 
 # Started by the iPhone shortcut (repository_dispatch) or by hand from the Actions tab.
+# The reel's caption, transcript and frames are stored as a temporary artifact, never
+# committed, so nothing about a reel stays in the repo. Claude deletes the artifact once it
+# has summarized the reel; anything left unreviewed expires on its own after 90 days.
 on:
   repository_dispatch:
     types: [reel]
@@ -10,13 +13,8 @@ on:
         description: Instagram reel link
         required: true
 
-# One reel at a time so commits never collide.
-concurrency:
-  group: ingest
-  cancel-in-progress: false
-
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   ingest:
@@ -24,8 +22,10 @@ jobs:
     timeout-minutes: 15
     env:
       REEL_URL: ${{ github.event.client_payload.url || github.event.inputs.url }}
+      OUT_DIR: ${{ github.workspace }}/out
       WHISPER_MODEL: small
-      MAX_FRAMES: "10"
+      FRAME_EVERY: "2"
+      MAX_FRAMES: "45"
     steps:
       - uses: actions/checkout@v4
 
@@ -54,14 +54,14 @@ jobs:
             echo "IG_COOKIES_FILE=$RUNNER_TEMP/cookies.txt" >> "$GITHUB_ENV"
           fi
 
-      - name: Download, transcribe and save the reel
+      - name: Download, transcribe and grab frames
+        id: process
         run: python scripts/process_reel.py "$REEL_URL"
 
-      - name: Commit
-        run: |
-          git config user.name "reels-inbox"
-          git config user.email "reels-inbox@users.noreply.github.com"
-          git add reels
-          git commit -m "Add reel: $REEL_URL"
-          git pull --rebase
-          git push
+      - name: Store as a temporary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-${{ steps.process.outputs.folder }}
+          path: out/${{ steps.process.outputs.folder }}
+          retention-days: 90
+          if-no-files-found: error
