@@ -9,4 +9,4 @@ Claude can read, summarize and judge them. See [SETUP.md](SETUP.md).
   adds the result to the separate `inbox` branch as `reels/<date>-<id>/`. Nothing goes on main.
 - Every folder on `inbox` is a reel Claude hasn't summarized yet. After summarizing, Claude
   rebuilds `inbox` as one fresh commit without those reels and force-pushes it, so their
-  content is gone from the branch history too.
+  content is gone from the branch history too (`scripts/clear_inbox.sh <folder>...`).
