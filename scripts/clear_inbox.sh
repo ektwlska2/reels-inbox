@@ -6,7 +6,7 @@
 #
 # Rebuilds `inbox` as one fresh commit holding only the reels that are left and force-pushes
 # it (with a lease, so a reel that arrived in the meantime is never lost). When nothing is left
-# the branch is deleted; the next shared reel recreates it.
+# the branch becomes a single "Inbox empty" commit.
 set -euo pipefail
 [ $# -ge 1 ] || { echo "usage: $0 <reel-folder>..." >&2; exit 1; }
 
@@ -21,14 +21,17 @@ for folder in "$@"; do
   rm -rf "$tmp/reels/$folder"
 done
 
+# Claude's sessions can't delete branches, so an empty inbox is a single commit with a note.
+git -C "$tmp" rm -rq --cached --ignore-unmatch . >/dev/null
 if [ -z "$(ls -A "$tmp/reels" 2>/dev/null)" ]; then
-  git push -q --force-with-lease=inbox:"$old" origin :inbox
-  echo "inbox is empty; branch deleted"
-  exit 0
+  echo "No reels waiting. New ones appear under reels/." > "$tmp/EMPTY.md"
+  git -C "$tmp" add EMPTY.md
+  msg="Inbox empty"
+else
+  git -C "$tmp" add reels
+  msg="Unreviewed reels"
 fi
-
-git -C "$tmp" add -A reels
 tree=$(git -C "$tmp" write-tree)
-commit=$(git commit-tree "$tree" -m "Unreviewed reels")
+commit=$(git commit-tree "$tree" -m "$msg")
 git push -q --force-with-lease=inbox:"$old" origin "$commit":refs/heads/inbox
-echo "inbox now holds: $(ls "$tmp/reels" | tr '\n' ' ')"
+echo "inbox now holds: $(ls "$tmp/reels" 2>/dev/null | tr '\n' ' ')"
